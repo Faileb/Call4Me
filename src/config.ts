@@ -19,6 +19,10 @@ export interface Config {
   // Storage
   recordingsPath: string
 
+  // SSL/TLS
+  sslKeyPath: string | null
+  sslCertPath: string | null
+
   // Options
   logLevel: 'error' | 'warn' | 'info' | 'debug'
   disableAuth: boolean
@@ -44,6 +48,10 @@ const configData: Config = {
 
   // Storage
   recordingsPath: process.env.RECORDINGS_PATH || './data/recordings',
+
+  // SSL/TLS
+  sslKeyPath: process.env.SSL_KEY_PATH || null,
+  sslCertPath: process.env.SSL_CERT_PATH || null,
 
   // Options
   logLevel: (process.env.LOG_LEVEL as Config['logLevel']) || 'info',

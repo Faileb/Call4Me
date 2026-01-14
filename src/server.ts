@@ -1,4 +1,6 @@
 import express from 'express'
+import https from 'https'
+import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import cors from 'cors'
@@ -261,13 +263,32 @@ async function start() {
       logger.info('Scheduler initialized')
     }
 
-    app.listen(config.port, () => {
-      if (config.isSetupMode) {
-        logger.info({ port: config.port }, 'Server started in SETUP MODE')
-      } else {
-        logger.info({ port: config.port, baseUrl: config.appBaseUrl }, 'Server started')
+    // Check if SSL certificates are configured and exist
+    const useHttps = config.sslKeyPath && config.sslCertPath &&
+      fs.existsSync(config.sslKeyPath) && fs.existsSync(config.sslCertPath)
+
+    if (useHttps) {
+      const httpsOptions = {
+        key: fs.readFileSync(config.sslKeyPath!),
+        cert: fs.readFileSync(config.sslCertPath!),
       }
-    })
+
+      https.createServer(httpsOptions, app).listen(config.port, () => {
+        if (config.isSetupMode) {
+          logger.info({ port: config.port, https: true }, 'Server started in SETUP MODE (HTTPS)')
+        } else {
+          logger.info({ port: config.port, baseUrl: config.appBaseUrl, https: true }, 'Server started (HTTPS)')
+        }
+      })
+    } else {
+      app.listen(config.port, () => {
+        if (config.isSetupMode) {
+          logger.info({ port: config.port }, 'Server started in SETUP MODE')
+        } else {
+          logger.info({ port: config.port, baseUrl: config.appBaseUrl }, 'Server started')
+        }
+      })
+    }
   } catch (error) {
     logger.error({ error }, 'Failed to start server')
     process.exit(1)
