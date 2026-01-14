@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Recording {
+  id               String   @id @default(uuid())
+  name             String
+  description      String?
+  tags             String   @default("[]") // JSON array stored as string
+  filename         String   // UUID-based filename on disk
+  originalFilename String
+  mimeType         String
+  duration         Float    // seconds
+  size             Int      // bytes
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  scheduledCalls ScheduledCall[]
+  callLogs       CallLog[]
+  templates      CallTemplate[]
+}
+
+model Contact {
+  id          String   @id @default(uuid())
+  name        String
+  phoneNumber String   // E.164 format
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  scheduledCalls ScheduledCall[]
+  callLogs       CallLog[]
+  templates      CallTemplate[]
+}
+
+model CallTemplate {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+
+  // Optional defaults
+  recordingId String?
+  recording   Recording? @relation(fields: [recordingId], references: [id], onDelete: SetNull)
+  contactId   String?
+  contact     Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  // Twilio options
+  machineDetection        String @default("DetectMessageEnd") // Enable, DetectMessageEnd, Disabled
+  machineDetectionTimeout Int    @default(30)
+  postBeepDelay           Float  @default(0) // seconds
+  twilioOptions           String @default("{}") // JSON
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ScheduledCall {
+  id          String  @id @default(uuid())
+  phoneNumber String  // E.164 format (denormalized)
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  recordingId String
+  recording   Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+
+  scheduledAt DateTime // UTC
+
+  // Recurrence (null = one-time)
+  recurrencePattern String?  // cron expression
+  recurrenceEnabled Boolean  @default(false)
+
+  // Twilio options
+  machineDetection        String @default("DetectMessageEnd")
+  machineDetectionTimeout Int    @default(30)
+  postBeepDelay           Float  @default(0)
+  twilioOptions           String @default("{}")
+
+  // Status
+  status    String    @default("pending") // pending, in_progress, completed, failed, paused
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  callLogs CallLog[]
+}
+
+model CallLog {
+  id              String  @id @default(uuid())
+  scheduledCallId String?
+  scheduledCall   ScheduledCall? @relation(fields: [scheduledCallId], references: [id], onDelete: SetNull)
+
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  phoneNumber String   // Denormalized for history
+
+  recordingId String
+  recording   Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+
+  // Twilio data
+  twilioCallSid String?
+  status        String  @default("initiated") // initiated, ringing, in_progress, completed, failed, busy, no_answer, canceled
+  amdResult     String? // human, machine_start, machine_end_beep, machine_end_silence, machine_end_other, fax, unknown
+  duration      Float?  // seconds
+  errorCode     String?
+  errorMessage  String?
+
+  // Timestamps
+  initiatedAt DateTime  @default(now())
+  answeredAt  DateTime?
+  endedAt     DateTime?
+
+  // Retry tracking
+  retryOf       String?
+  retryOfLog    CallLog?  @relation("RetryRelation", fields: [retryOf], references: [id], onDelete: SetNull)
+  retriedBy     CallLog[] @relation("RetryRelation")
+
+  createdAt DateTime @default(now())
+}
+
+model Settings {
+  id    String @id @default("default")
+  key   String @unique
+  value String // JSON encoded value
+}
+
+model Session {
+  id        String   @id
+  data      String
+  expiresAt DateTime
+}
