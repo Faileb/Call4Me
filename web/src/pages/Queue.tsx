@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, formatDistanceToNow } from 'date-fns'
-import { Clock, Play, Pause, Trash2, Edit2, Phone, RefreshCw } from 'lucide-react'
+import { Clock, Play, Pause, Trash2, Phone, RefreshCw } from 'lucide-react'
 import { api } from '../lib/api'
 import { toast } from 'sonner'
 import { clsx } from 'clsx'

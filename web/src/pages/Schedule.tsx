@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isToday, isBefore, startOfDay } from 'date-fns'
-import { Calendar, Clock, ChevronLeft, ChevronRight, Play, Mic, Users, Phone } from 'lucide-react'
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, isBefore, startOfDay } from 'date-fns'
+import { Calendar, Clock, ChevronLeft, ChevronRight, Mic, Users, Phone } from 'lucide-react'
 import { api, CreateScheduledCallData } from '../lib/api'
 import { toast } from 'sonner'
 import { clsx } from 'clsx'
@@ -29,7 +29,7 @@ export function Schedule() {
   const [isRecurring, setIsRecurring] = useState(false)
   const [recurrencePattern, setRecurrencePattern] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [callImmediately, setCallImmediately] = useState(false)
+  const callImmediately = false // TODO: Add UI toggle for immediate calls
 
   const { data: recordings } = useQuery({
     queryKey: ['recordings'],
