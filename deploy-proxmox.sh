@@ -528,41 +528,21 @@ create_env_file() {
 
     exec_in_container "cat > $APP_DIR/app/.env << 'ENVEOF'
 # Call4Me Configuration
-# Edit this file with your settings, then run: systemctl start call4me
+# Most settings are configured via the web-based setup wizard.
+# This file contains runtime environment settings only.
 
 # =============================================================================
-# REQUIRED: Twilio Configuration
-# Get these from https://console.twilio.com/
-# =============================================================================
-TWILIO_ACCOUNT_SID=your_account_sid_here
-TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_PHONE_NUMBER=+1234567890
-
-# =============================================================================
-# REQUIRED: Application Security
-# =============================================================================
-# Secret key for session encryption (auto-generated, do not change)
-APP_SECRET=$app_secret
-
-# Password for web UI login
-APP_PASSWORD=changeme
-
-# =============================================================================
-# REQUIRED: Public URL
-# This URL must be accessible from the internet for Twilio webhooks
-# Examples:
-#   - https://call4me.yourdomain.com (if using reverse proxy)
-#   - https://abc123.ngrok.io (if using ngrok tunnel)
-#   - https://your-tailscale-hostname.ts.net (if using Tailscale)
-# =============================================================================
-APP_BASE_URL=https://your-public-url-here
-
-# =============================================================================
-# Optional Configuration
+# Runtime Configuration
 # =============================================================================
 NODE_ENV=production
 APP_PORT=3000
 LOG_LEVEL=info
+
+# Secret key for session encryption (auto-generated, do not change)
+APP_SECRET=$app_secret
+
+# Database location
+DATABASE_URL=file:./prisma/data/call4me.db
 
 # Timezone for scheduled calls (e.g., America/New_York, Europe/London)
 TZ=UTC
@@ -663,40 +643,26 @@ show_summary() {
     echo -e "${YELLOW}NEXT STEPS:${NC}"
     echo "============================================================================="
     echo ""
-    echo "1. Configure your Twilio credentials:"
-    echo "   pct exec $CTID -- nano $APP_DIR/app/.env"
+    echo "1. Access the setup wizard:"
+    echo "   http://$container_ip:3000"
     echo ""
-    echo "   Required settings to update:"
-    echo "   - TWILIO_ACCOUNT_SID"
-    echo "   - TWILIO_AUTH_TOKEN"
-    echo "   - TWILIO_PHONE_NUMBER"
-    echo "   - APP_PASSWORD"
-    echo "   - APP_BASE_URL (your public HTTPS URL)"
+    echo "   The wizard will guide you through:"
+    echo "   - Setting up a login password"
+    echo "   - Configuring Twilio credentials"
+    echo "   - Setting up a public URL (ngrok/Tailscale/Cloudflare)"
     echo ""
-    echo "2. Start the service:"
-    echo "   pct exec $CTID -- systemctl start call4me"
-    echo ""
-    echo "3. Check service status:"
+    echo "2. Check service status:"
     echo "   pct exec $CTID -- systemctl status call4me"
     echo ""
-    echo "4. View logs:"
+    echo "3. View logs:"
     echo "   pct exec $CTID -- journalctl -u call4me -f"
-    echo ""
-    echo "5. Access the web UI:"
-    echo "   http://$container_ip:3000"
     echo ""
     echo "============================================================================="
     echo -e "${BLUE}NOTES:${NC}"
     echo "============================================================================="
     echo ""
-    echo "- For Twilio webhooks to work, you need a public HTTPS URL."
-    echo "  Options include:"
-    echo "    * Reverse proxy with SSL (Nginx/Caddy)"
-    echo "    * ngrok tunnel (configure in Settings > Network)"
-    echo "    * Tailscale Funnel"
-    echo "    * Cloudflare Tunnel"
-    echo ""
-    echo "- The service is enabled but NOT started until you configure .env"
+    echo "- For Twilio webhooks and microphone access, use HTTPS."
+    echo "  The setup wizard can configure ngrok for you automatically."
     echo ""
     echo "- To enter the container shell:"
     echo "   pct enter $CTID"
