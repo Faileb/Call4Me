@@ -491,8 +491,8 @@ clone_repository() {
 install_app_dependencies() {
     log_info "Installing application dependencies (this may take a few minutes)..."
 
-    exec_in_container "cd $APP_DIR/app && sudo -u call4me npm install"
-    exec_in_container "cd $APP_DIR/app/web && sudo -u call4me npm install"
+    exec_in_container "su call4me -c 'cd $APP_DIR/app && npm install'"
+    exec_in_container "su call4me -c 'cd $APP_DIR/app/web && npm install'"
 
     log_success "Dependencies installed"
 }
@@ -500,8 +500,8 @@ install_app_dependencies() {
 build_application() {
     log_info "Building application..."
 
-    exec_in_container "cd $APP_DIR/app && sudo -u call4me npx prisma generate"
-    exec_in_container "cd $APP_DIR/app && sudo -u call4me npm run build"
+    exec_in_container "su call4me -c 'cd $APP_DIR/app && npx prisma generate'"
+    exec_in_container "su call4me -c 'cd $APP_DIR/app && npm run build'"
 
     log_success "Application built successfully"
 }
@@ -621,7 +621,7 @@ initialize_database() {
     log_info "Initializing database..."
 
     # Create a minimal .env for database initialization
-    exec_in_container "cd $APP_DIR/app && sudo -u call4me npx prisma db push"
+    exec_in_container "su call4me -c 'cd $APP_DIR/app && npx prisma db push'"
 
     log_success "Database initialized"
 }
