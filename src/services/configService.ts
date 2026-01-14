@@ -196,17 +196,19 @@ class ConfigService {
     }
   }
 
-  // Get a secret value with priority: env > database
+  // Get a secret value with priority: database > env
+  // Database secrets are authoritative (set via setup wizard)
+  // Env vars are fallback for initial setup or migration
   async getSecret(key: SecretKey): Promise<string | null> {
-    // Check environment variable first
+    // Check cache (loaded from encrypted database) first
+    if (this.secretsCache.has(key)) {
+      return this.secretsCache.get(key)!
+    }
+
+    // Fall back to environment variable
     const envValue = this.getFromEnv(key) as string | undefined
     if (envValue !== undefined) {
       return envValue
-    }
-
-    // Check cache
-    if (this.secretsCache.has(key)) {
-      return this.secretsCache.get(key)!
     }
 
     // Not found
