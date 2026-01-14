@@ -88,7 +88,6 @@ export async function triggerCall(
     // Build TwiML URL (appBaseUrl is validated above)
     const twimlUrl = `${config.appBaseUrl}/api/twilio/twiml/${callLog.id}`
     const statusCallback = `${config.appBaseUrl}/api/twilio/status`
-    const amdCallback = `${config.appBaseUrl}/api/twilio/amd`
 
     // Build call options
     const callOptions: Parameters<ReturnType<typeof twilio>['calls']['create']>[0] = {
@@ -100,18 +99,23 @@ export async function triggerCall(
       statusCallbackMethod: 'POST',
     }
 
-    // Add AMD options
+    // Add AMD options (synchronous mode - Twilio waits for detection before fetching TwiML)
     if (machineDetection !== 'Disabled') {
       callOptions.machineDetection = machineDetection as 'Enable' | 'DetectMessageEnd'
       callOptions.machineDetectionTimeout = machineDetectionTimeout
-      callOptions.asyncAmd = 'true'
-      callOptions.asyncAmdStatusCallback = amdCallback
-      callOptions.asyncAmdStatusCallbackMethod = 'POST'
+      // Note: Not using asyncAmd so Twilio waits for detection (including beep) before fetching TwiML.
+      // This ensures voicemail messages are played AFTER the greeting ends, not during it.
     }
 
     // Parse and add additional Twilio options
     const additionalOptions = JSON.parse(callData.twilioOptions || '{}')
     Object.assign(callOptions, additionalOptions)
+
+    // Ensure async AMD is disabled - we need synchronous AMD for voicemail to work properly.
+    // Remove any async AMD options that may have been added via twilioOptions.
+    delete callOptions.asyncAmd
+    delete callOptions.asyncAmdStatusCallback
+    delete callOptions.asyncAmdStatusCallbackMethod
 
     // Store postBeepDelay in call log metadata (we'll use it in TwiML generation)
     // For now, we'll encode it in the TwiML URL

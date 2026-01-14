@@ -63,6 +63,9 @@ twilioWebhooksRouter.post('/status', async (req, res) => {
 })
 
 // AMD (Answering Machine Detection) callback
+// NOTE: With synchronous AMD, this endpoint is no longer used for new calls.
+// AMD results are now included in the TwiML request and processed there.
+// Kept for backwards compatibility with any in-flight calls during deployment.
 twilioWebhooksRouter.post('/amd', async (req, res) => {
   try {
     const { CallSid, AnsweredBy } = req.body
@@ -84,6 +87,8 @@ twilioWebhooksRouter.post('/amd', async (req, res) => {
 twilioWebhooksRouter.all('/twiml/:callLogId', async (req, res) => {
   try {
     const { callLogId } = req.params
+    // With synchronous AMD, Twilio includes AnsweredBy in the TwiML request
+    const answeredBy = req.body.AnsweredBy || req.query.AnsweredBy
 
     // Get call log to find the recording and settings
     const callLog = await prisma.callLog.findUnique({
@@ -100,6 +105,16 @@ twilioWebhooksRouter.all('/twiml/:callLogId', async (req, res) => {
       return
     }
 
+    // Store AMD result if provided (from synchronous machine detection)
+    if (answeredBy) {
+      const amdResult = mapAmdResult(answeredBy)
+      await prisma.callLog.update({
+        where: { id: callLogId },
+        data: { amdResult },
+      })
+      logger.info({ callLogId, answeredBy, amdResult }, 'AMD result recorded from TwiML request')
+    }
+
     // Build audio URL - use the public Twilio endpoint (no auth required)
     const audioUrl = `${config.appBaseUrl}/api/twilio/audio/${callLog.recording.id}`
 
@@ -109,7 +124,7 @@ twilioWebhooksRouter.all('/twiml/:callLogId', async (req, res) => {
     // Generate TwiML
     const twiml = generateTwiML(audioUrl, postBeepDelay)
 
-    logger.info({ callLogId, postBeepDelay }, 'Serving TwiML')
+    logger.info({ callLogId, postBeepDelay, answeredBy }, 'Serving TwiML')
 
     res.type('text/xml')
     res.send(twiml)
