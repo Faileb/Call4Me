@@ -20,14 +20,15 @@ function getNextCronDate(pattern: string): Date | null {
   }
 }
 
-export async function scheduleCall(
-  call: ScheduledCallData & {
-    scheduledAt: Date
-    nextRunAt: Date | null
-    recurrencePattern: string | null
-    recurrenceEnabled: boolean
-  }
-): Promise<void> {
+type ScheduledCallWithId = Omit<ScheduledCallData, 'id'> & {
+  id: string  // Required non-null id for scheduled calls
+  scheduledAt: Date
+  nextRunAt: Date | null
+  recurrencePattern: string | null
+  recurrenceEnabled: boolean
+}
+
+export async function scheduleCall(call: ScheduledCallWithId): Promise<void> {
   const { id, scheduledAt, recurrencePattern, recurrenceEnabled } = call
 
   // Cancel any existing job for this call
@@ -69,10 +70,7 @@ export async function scheduleCall(
   }
 }
 
-async function executeScheduledCall(call: ScheduledCallData & {
-  recurrencePattern: string | null
-  recurrenceEnabled: boolean
-}): Promise<void> {
+async function executeScheduledCall(call: ScheduledCallWithId): Promise<void> {
   try {
     // Update status to in_progress
     await prisma.scheduledCall.update({
@@ -154,12 +152,7 @@ export async function initScheduler(): Promise<void> {
   logger.info({ count: pendingCalls.length }, 'Restoring pending scheduled calls')
 
   for (const call of pendingCalls) {
-    const callData: ScheduledCallData & {
-      scheduledAt: Date
-      nextRunAt: Date | null
-      recurrencePattern: string | null
-      recurrenceEnabled: boolean
-    } = {
+    const callData: ScheduledCallWithId = {
       id: call.id,
       phoneNumber: call.phoneNumber,
       contactId: call.contactId,

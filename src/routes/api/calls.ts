@@ -185,7 +185,7 @@ callsRouter.patch('/scheduled/:id', async (req, res) => {
       },
       include: {
         recording: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, filename: true },
         },
         contact: {
           select: { id: true, name: true, phoneNumber: true },
@@ -195,7 +195,13 @@ callsRouter.patch('/scheduled/:id', async (req, res) => {
 
     // Re-schedule if still pending
     if (call.status === 'pending') {
-      await scheduleCall(call)
+      await scheduleCall({
+        ...call,
+        recording: {
+          id: call.recording.id,
+          filename: call.recording.filename,
+        },
+      })
     }
 
     logger.info({ callId: call.id }, 'Scheduled call updated')
