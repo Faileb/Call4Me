@@ -14,7 +14,7 @@ export function setupModeMiddleware(
     return
   }
 
-  const path = req.path
+  const urlPath = req.path
 
   // Always allow these routes during setup
   const allowedPaths = [
@@ -25,8 +25,12 @@ export function setupModeMiddleware(
     '/api/tunnel', // Needed for tunnel configuration during setup
   ]
 
-  const isAllowed = allowedPaths.some(
-    (allowed) => path === allowed || path.startsWith(allowed + '/')
+  // Allow static assets and frontend routes for setup wizard UI
+  const isStaticAsset = urlPath.startsWith('/assets/') || urlPath.endsWith('.js') || urlPath.endsWith('.css') || urlPath.endsWith('.ico')
+  const isFrontendRoute = !urlPath.startsWith('/api/')
+
+  const isAllowed = isStaticAsset || isFrontendRoute || allowedPaths.some(
+    (allowed) => urlPath === allowed || urlPath.startsWith(allowed + '/')
   )
 
   if (isAllowed) {
