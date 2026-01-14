@@ -59,7 +59,9 @@ function initializeSession(secret: string) {
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: config.isProduction,
+      // 'auto' means secure cookie only when connection is HTTPS
+      // This allows HTTP access on local network while requiring HTTPS externally
+      secure: 'auto',
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     },
