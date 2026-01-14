@@ -8,6 +8,7 @@ import { prisma } from '../../db/client.js'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { recordingsTotal } from '../../services/metrics.js'
+import { ACCEPTED_UPLOAD_FORMATS, processAudioFile, checkFfmpeg } from '../../services/audio.js'
 
 export const recordingsRouter = Router()
 
@@ -34,19 +35,7 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (_req, file, cb) => {
-    const allowedMimes = [
-      'audio/mpeg',
-      'audio/wav',
-      'audio/wave',
-      'audio/x-wav',
-      'audio/ogg',
-      'audio/mp4',
-      'audio/m4a',
-      'audio/x-m4a',
-      'audio/webm',      // Browser MediaRecorder format
-      'audio/opus',
-    ]
-    if (allowedMimes.includes(file.mimetype)) {
+    if (ACCEPTED_UPLOAD_FORMATS.includes(file.mimetype)) {
       cb(null, true)
     } else {
       cb(new Error(`Invalid file type: ${file.mimetype}. Allowed: MP3, WAV, OGG, M4A, WebM`))
@@ -110,17 +99,28 @@ recordingsRouter.post('/upload', upload.single('file'), async (req, res) => {
     }
 
     const { name, description, tags } = req.body
+    const originalFilePath = path.join(config.recordingsPath, req.file.filename)
+
+    // Process and convert audio if needed (e.g., WebM -> WAV)
+    const processed = await processAudioFile(
+      originalFilePath,
+      req.file.mimetype,
+      config.recordingsPath
+    )
+
+    // Get file size after conversion
+    const stats = await fs.stat(processed.path)
 
     const recording = await prisma.recording.create({
       data: {
-        name: name || req.file.originalname,
+        name: name || req.file.originalname.replace(/\.[^.]+$/, ''),
         description: description || null,
         tags: JSON.stringify(tags ? JSON.parse(tags) : []),
-        filename: req.file.filename,
+        filename: processed.filename,
         originalFilename: req.file.originalname,
-        mimeType: req.file.mimetype,
-        duration: 0, // TODO: Calculate actual duration
-        size: req.file.size,
+        mimeType: processed.mimeType,
+        duration: processed.duration,
+        size: stats.size,
       },
     })
 
@@ -128,14 +128,14 @@ recordingsRouter.post('/upload', upload.single('file'), async (req, res) => {
     const count = await prisma.recording.count()
     recordingsTotal.set(count)
 
-    logger.info({ recordingId: recording.id }, 'Recording uploaded')
+    logger.info({ recordingId: recording.id, converted: processed.mimeType !== req.file.mimetype }, 'Recording uploaded')
     res.status(201).json({
       ...recording,
       tags: JSON.parse(recording.tags),
     })
   } catch (error) {
     logger.error({ error }, 'Failed to upload recording')
-    res.status(500).json({ error: 'Failed to upload recording' })
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to upload recording' })
   }
 })
 
@@ -146,18 +146,29 @@ recordingsRouter.post('/record', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio data' })
     }
 
-    const { name, description, tags, duration } = req.body
+    const { name, description, tags } = req.body
+    const originalFilePath = path.join(config.recordingsPath, req.file.filename)
+
+    // Process and convert audio (browser recordings are WebM, need conversion to WAV)
+    const processed = await processAudioFile(
+      originalFilePath,
+      req.file.mimetype,
+      config.recordingsPath
+    )
+
+    // Get file size after conversion
+    const stats = await fs.stat(processed.path)
 
     const recording = await prisma.recording.create({
       data: {
-        name: name || `Recording ${new Date().toISOString()}`,
+        name: name || `Recording ${new Date().toLocaleString()}`,
         description: description || null,
         tags: JSON.stringify(tags ? JSON.parse(tags) : []),
-        filename: req.file.filename,
-        originalFilename: 'browser-recording.webm',
-        mimeType: req.file.mimetype,
-        duration: parseFloat(duration) || 0,
-        size: req.file.size,
+        filename: processed.filename,
+        originalFilename: 'browser-recording.wav',
+        mimeType: processed.mimeType,
+        duration: processed.duration,
+        size: stats.size,
       },
     })
 
@@ -165,14 +176,14 @@ recordingsRouter.post('/record', upload.single('audio'), async (req, res) => {
     const count = await prisma.recording.count()
     recordingsTotal.set(count)
 
-    logger.info({ recordingId: recording.id }, 'Browser recording saved')
+    logger.info({ recordingId: recording.id }, 'Browser recording saved and converted')
     res.status(201).json({
       ...recording,
       tags: JSON.parse(recording.tags),
     })
   } catch (error) {
     logger.error({ error }, 'Failed to save browser recording')
-    res.status(500).json({ error: 'Failed to save recording' })
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to save recording' })
   }
 })
 

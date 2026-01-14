@@ -20,6 +20,7 @@ import { settingsRouter } from './routes/api/settings.js'
 import { twilioWebhooksRouter } from './routes/twilio/webhooks.js'
 import { authMiddleware } from './middleware/auth.js'
 import { initScheduler } from './services/scheduler.js'
+import { checkFfmpeg } from './services/audio.js'
 
 const app = express()
 
@@ -131,6 +132,28 @@ function checkBaseUrl() {
   }
 }
 
+// Check FFmpeg availability
+async function checkFfmpegAvailability() {
+  const hasFfmpeg = await checkFfmpeg()
+  if (hasFfmpeg) {
+    logger.info('FFmpeg detected - audio conversion enabled')
+  } else {
+    logger.warn('=' .repeat(70))
+    logger.warn('WARNING: FFmpeg is not installed!')
+    logger.warn('')
+    logger.warn('Browser recordings (WebM format) will fail without FFmpeg.')
+    logger.warn('Twilio only supports MP3/WAV audio formats.')
+    logger.warn('')
+    logger.warn('To install FFmpeg:')
+    logger.warn('  macOS:   brew install ffmpeg')
+    logger.warn('  Ubuntu:  sudo apt install ffmpeg')
+    logger.warn('  Windows: Download from https://ffmpeg.org/download.html')
+    logger.warn('')
+    logger.warn('Alternatively, upload MP3 or WAV files directly.')
+    logger.warn('=' .repeat(70))
+  }
+}
+
 // Start server
 async function start() {
   try {
@@ -140,6 +163,9 @@ async function start() {
 
     // Check APP_BASE_URL configuration
     checkBaseUrl()
+
+    // Check FFmpeg availability
+    await checkFfmpegAvailability()
 
     // Initialize scheduler for pending jobs
     await initScheduler()

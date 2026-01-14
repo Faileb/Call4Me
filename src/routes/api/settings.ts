@@ -4,6 +4,7 @@ import { prisma } from '../../db/client.js'
 import { config } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { testTwilioConnection } from '../../services/twilio.js'
+import { checkFfmpeg } from '../../services/audio.js'
 
 export const settingsRouter = Router()
 
@@ -166,10 +167,20 @@ settingsRouter.get('/status', async (_req, res) => {
     )
   }
 
+  // Check FFmpeg availability
+  const hasFfmpeg = await checkFfmpeg()
+  if (!hasFfmpeg) {
+    warnings.push(
+      'FFmpeg is not installed. Browser recordings (WebM format) will not work. ' +
+      'Install FFmpeg to enable audio conversion, or upload MP3/WAV files directly.'
+    )
+  }
+
   res.json({
     appBaseUrl: config.appBaseUrl,
     twilioPhoneNumber: config.twilioPhoneNumber,
     isLocalhost,
+    hasFfmpeg,
     warnings,
   })
 })
