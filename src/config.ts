@@ -22,6 +22,7 @@ export interface Config {
   // SSL/TLS
   sslKeyPath: string | null
   sslCertPath: string | null
+  sslPort: number
 
   // Options
   logLevel: 'error' | 'warn' | 'info' | 'debug'
@@ -52,6 +53,7 @@ const configData: Config = {
   // SSL/TLS
   sslKeyPath: process.env.SSL_KEY_PATH || null,
   sslCertPath: process.env.SSL_CERT_PATH || null,
+  sslPort: parseInt(process.env.SSL_PORT || '3443', 10),
 
   // Options
   logLevel: (process.env.LOG_LEVEL as Config['logLevel']) || 'info',

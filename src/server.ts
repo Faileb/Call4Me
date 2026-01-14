@@ -263,7 +263,16 @@ async function start() {
       logger.info('Scheduler initialized')
     }
 
-    // Check if SSL certificates are configured and exist
+    // Always start HTTP server (for ngrok and local access)
+    app.listen(config.port, () => {
+      if (config.isSetupMode) {
+        logger.info({ port: config.port }, 'HTTP server started in SETUP MODE')
+      } else {
+        logger.info({ port: config.port, baseUrl: config.appBaseUrl }, 'HTTP server started')
+      }
+    })
+
+    // Additionally start HTTPS server if SSL certificates are configured
     const useHttps = config.sslKeyPath && config.sslCertPath &&
       fs.existsSync(config.sslKeyPath) && fs.existsSync(config.sslCertPath)
 
@@ -273,20 +282,8 @@ async function start() {
         cert: fs.readFileSync(config.sslCertPath!),
       }
 
-      https.createServer(httpsOptions, app).listen(config.port, () => {
-        if (config.isSetupMode) {
-          logger.info({ port: config.port, https: true }, 'Server started in SETUP MODE (HTTPS)')
-        } else {
-          logger.info({ port: config.port, baseUrl: config.appBaseUrl, https: true }, 'Server started (HTTPS)')
-        }
-      })
-    } else {
-      app.listen(config.port, () => {
-        if (config.isSetupMode) {
-          logger.info({ port: config.port }, 'Server started in SETUP MODE')
-        } else {
-          logger.info({ port: config.port, baseUrl: config.appBaseUrl }, 'Server started')
-        }
+      https.createServer(httpsOptions, app).listen(config.sslPort, () => {
+        logger.info({ port: config.sslPort }, 'HTTPS server started')
       })
     }
   } catch (error) {
