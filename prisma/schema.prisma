@@ -135,3 +135,62 @@ model Session {
   data      String
   expiresAt DateTime
 }
+
+// App configuration - singleton record
+model AppConfig {
+  id              String   @id @default("singleton")
+  initialized     Boolean  @default(false)
+  setupComplete   Boolean  @default(false)
+
+  // Server settings
+  appPort         Int      @default(3000)
+  logLevel        String   @default("info") // error, warn, info, debug
+  timezone        String   @default("UTC")
+  recordingsPath  String   @default("./data/recordings")
+
+  // Network settings
+  appBaseUrl      String?
+
+  // Tunnel settings
+  tunnelType      String?  // none, ngrok, tailscale, cloudflare
+  tunnelAutoStart Boolean  @default(false)
+
+  // Auth settings
+  disableAuth     Boolean  @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Encrypted secrets storage
+model Secret {
+  id             String   @id @default(uuid())
+  key            String   @unique
+  encryptedValue String   // AES-256-GCM encrypted
+  iv             String   // Initialization vector (base64)
+  authTag        String   // Authentication tag (base64)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// Tunnel service configuration - singleton record
+model TunnelConfig {
+  id                    String   @id @default("singleton")
+
+  // ngrok settings
+  ngrokRegion           String   @default("us")
+
+  // Tailscale settings
+  tailscaleFunnelPort   Int?
+
+  // Cloudflare settings
+  cloudflareTunnelId    String?
+
+  // Runtime state (not persisted across restarts for active tunnel)
+  tunnelActive          Boolean  @default(false)
+  tunnelUrl             String?
+  tunnelError           String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}

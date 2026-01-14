@@ -20,7 +20,13 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   auth: {
-    session: () => fetchJson<{ authenticated: boolean }>(`${BASE_URL}/auth/session`),
+    session: () =>
+      fetchJson<{
+        authenticated: boolean
+        authEnabled: boolean
+        hasPassword: boolean
+        isSetupMode: boolean
+      }>(`${BASE_URL}/auth/session`),
     login: (password: string) =>
       fetchJson<{ success: boolean }>(`${BASE_URL}/auth/login`, {
         method: 'POST',
@@ -204,6 +210,64 @@ export const api = {
     getStatus: () =>
       fetchJson<ServerStatus>(`${BASE_URL}/settings/status`),
   },
+
+  setup: {
+    status: () =>
+      fetchJson<SetupStatus>(`${BASE_URL}/setup/status`),
+    prerequisites: () =>
+      fetchJson<{ ffmpeg: { installed: boolean; required: boolean; message: string } }>(
+        `${BASE_URL}/setup/prerequisites`
+      ),
+    twilio: (data: { accountSid: string; authToken: string; phoneNumber: string }) =>
+      fetchJson<{ success: boolean; accountName?: string; accountStatus?: string; error?: string }>(
+        `${BASE_URL}/setup/twilio`,
+        { method: 'POST', body: JSON.stringify(data) }
+      ),
+    twilioPhoneNumbers: () =>
+      fetchJson<{ success: boolean; phoneNumbers: { sid: string; phoneNumber: string; friendlyName: string }[] }>(
+        `${BASE_URL}/setup/twilio/phone-numbers`
+      ),
+    url: (data: { baseUrl: string; tunnelType?: string }) =>
+      fetchJson<{ success: boolean }>(`${BASE_URL}/setup/url`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    password: (data: { password?: string; skipPassword?: boolean }) =>
+      fetchJson<{ success: boolean; passwordSet: boolean }>(`${BASE_URL}/setup/password`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    complete: () =>
+      fetchJson<{ success: boolean; redirectTo: string }>(`${BASE_URL}/setup/complete`, {
+        method: 'POST',
+      }),
+  },
+
+  tunnel: {
+    status: () =>
+      fetchJson<TunnelStatus>(`${BASE_URL}/tunnel/status`),
+    check: () =>
+      fetchJson<Record<string, { available: boolean; message?: string }>>(`${BASE_URL}/tunnel/check`),
+    config: () =>
+      fetchJson<TunnelConfig>(`${BASE_URL}/tunnel/config`),
+    updateConfig: (data: Partial<TunnelConfigUpdate>) =>
+      fetchJson<{ success: boolean }>(`${BASE_URL}/tunnel/config`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    start: (type: string) =>
+      fetchJson<{ success: boolean; url?: string; error?: string }>(`${BASE_URL}/tunnel/start`, {
+        method: 'POST',
+        body: JSON.stringify({ type }),
+      }),
+    stop: () =>
+      fetchJson<{ success: boolean }>(`${BASE_URL}/tunnel/stop`, { method: 'POST' }),
+    test: (url: string) =>
+      fetchJson<{ success: boolean; message: string }>(`${BASE_URL}/tunnel/test`, {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      }),
+  },
 }
 
 export interface ServerStatus {
@@ -333,4 +397,37 @@ export interface AppSettings {
   twilioAccountSid?: string
   twilioAuthToken?: string
   twilioPhoneNumber?: string
+}
+
+export interface SetupStatus {
+  initialized: boolean
+  setupComplete: boolean
+  hasPassword: boolean
+  hasFfmpeg: boolean
+  authEnabled: boolean
+}
+
+export interface TunnelStatus {
+  active: boolean
+  type: string | null
+  url: string | null
+  error: string | null
+  uptime?: number
+}
+
+export interface TunnelConfig {
+  hasNgrokToken: boolean
+  hasCloudflareToken: boolean
+  ngrokRegion: string
+  cloudflareTunnelId: string | null
+  tunnelType: string | null
+  autoStart: boolean
+}
+
+export interface TunnelConfigUpdate {
+  ngrokAuthToken?: string
+  ngrokRegion?: string
+  cloudflareTunnelToken?: string
+  cloudflareTunnelId?: string
+  autoStart?: boolean
 }

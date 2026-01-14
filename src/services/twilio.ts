@@ -4,8 +4,23 @@ import { prisma } from '../db/client.js'
 import { logger } from '../utils/logger.js'
 import { callsTotal, callDuration, lastCallTimestamp } from './metrics.js'
 
-// Initialize Twilio client
-const client = twilio(config.twilioAccountSid, config.twilioAuthToken)
+// Lazy-initialized Twilio client
+let client: ReturnType<typeof twilio> | null = null
+
+function getTwilioClient(): ReturnType<typeof twilio> {
+  if (!config.twilioAccountSid || !config.twilioAuthToken) {
+    throw new Error('Twilio credentials not configured. Complete setup first.')
+  }
+  if (!client) {
+    client = twilio(config.twilioAccountSid, config.twilioAuthToken)
+  }
+  return client
+}
+
+// Reset client (used when credentials change)
+export function resetTwilioClient(): void {
+  client = null
+}
 
 export interface ScheduledCallData {
   id: string | null  // null for ad-hoc/retry calls
@@ -24,11 +39,17 @@ export interface ScheduledCallData {
 
 // Check if the base URL is accessible by Twilio
 function validateBaseUrl(): { valid: boolean; error?: string } {
+  if (!config.appBaseUrl) {
+    return {
+      valid: false,
+      error: 'Base URL not configured. Please set up a public URL in Settings > Network.',
+    }
+  }
   const url = config.appBaseUrl.toLowerCase()
   if (url.includes('localhost') || url.includes('127.0.0.1') || url.includes('0.0.0.0')) {
     return {
       valid: false,
-      error: `APP_BASE_URL is set to a localhost address (${config.appBaseUrl}). Twilio cannot reach localhost. Please use a tunnel like ngrok and update APP_BASE_URL to the public URL.`,
+      error: `Base URL is set to a localhost address (${config.appBaseUrl}). Twilio cannot reach localhost. Please configure a tunnel service in Settings > Network.`,
     }
   }
   return { valid: true }
@@ -59,13 +80,18 @@ export async function triggerCall(
   })
 
   try {
-    // Build TwiML URL
+    // Validate phone number is configured
+    if (!config.twilioPhoneNumber) {
+      throw new Error('Twilio phone number not configured. Complete setup first.')
+    }
+
+    // Build TwiML URL (appBaseUrl is validated above)
     const twimlUrl = `${config.appBaseUrl}/api/twilio/twiml/${callLog.id}`
     const statusCallback = `${config.appBaseUrl}/api/twilio/status`
     const amdCallback = `${config.appBaseUrl}/api/twilio/amd`
 
     // Build call options
-    const callOptions: twilio.Twilio.Api.V2010.AccountContext.CallListInstanceCreateOptions = {
+    const callOptions: Parameters<ReturnType<typeof twilio>['calls']['create']>[0] = {
       to: phoneNumber,
       from: config.twilioPhoneNumber,
       url: twimlUrl,
@@ -78,7 +104,7 @@ export async function triggerCall(
     if (machineDetection !== 'Disabled') {
       callOptions.machineDetection = machineDetection as 'Enable' | 'DetectMessageEnd'
       callOptions.machineDetectionTimeout = machineDetectionTimeout
-      callOptions.asyncAmd = true
+      callOptions.asyncAmd = 'true'
       callOptions.asyncAmdStatusCallback = amdCallback
       callOptions.asyncAmdStatusCallbackMethod = 'POST'
     }
@@ -93,7 +119,7 @@ export async function triggerCall(
 
     logger.info({ callLogId: callLog.id, to: phoneNumber }, 'Initiating Twilio call')
 
-    const call = await client.calls.create(callOptions)
+    const call = await getTwilioClient().calls.create(callOptions)
 
     // Update call log with Twilio SID
     await prisma.callLog.update({
@@ -208,20 +234,30 @@ export async function testTwilioConnection(): Promise<{
   error?: string
 }> {
   try {
-    const account = await client.api.accounts(config.twilioAccountSid).fetch()
+    if (!config.twilioAccountSid || !config.twilioAuthToken) {
+      return {
+        success: false,
+        error: 'Twilio credentials not configured',
+      }
+    }
 
-    // Verify phone number
-    const numbers = await client.incomingPhoneNumbers.list({ limit: 1 })
-    const hasNumber = numbers.some((n) => n.phoneNumber === config.twilioPhoneNumber)
+    const twilioClient = getTwilioClient()
+    const account = await twilioClient.api.accounts(config.twilioAccountSid).fetch()
 
-    if (!hasNumber) {
-      // Check if it's a valid number on the account
-      try {
-        await client.lookups.v2.phoneNumbers(config.twilioPhoneNumber).fetch()
-      } catch {
-        return {
-          success: false,
-          error: `Phone number ${config.twilioPhoneNumber} not found on this account`,
+    // Verify phone number if configured
+    if (config.twilioPhoneNumber) {
+      const numbers = await twilioClient.incomingPhoneNumbers.list({ limit: 20 })
+      const hasNumber = numbers.some((n) => n.phoneNumber === config.twilioPhoneNumber)
+
+      if (!hasNumber) {
+        // Check if it's a valid number on the account
+        try {
+          await twilioClient.lookups.v2.phoneNumbers(config.twilioPhoneNumber).fetch()
+        } catch {
+          return {
+            success: false,
+            error: `Phone number ${config.twilioPhoneNumber} not found on this account`,
+          }
         }
       }
     }
@@ -229,7 +265,7 @@ export async function testTwilioConnection(): Promise<{
     return {
       success: true,
       accountName: account.friendlyName,
-      phoneNumber: config.twilioPhoneNumber,
+      phoneNumber: config.twilioPhoneNumber ?? undefined,
     }
   } catch (error) {
     return {

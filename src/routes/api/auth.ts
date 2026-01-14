@@ -2,6 +2,7 @@ import { Router } from 'express'
 import argon2 from 'argon2'
 import rateLimit from 'express-rate-limit'
 import { config } from '../../config.js'
+import { configService } from '../../services/configService.js'
 import { logger } from '../../utils/logger.js'
 
 export const authRouter = Router()
@@ -15,36 +16,57 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 })
 
-// Store the password hash (computed on first use)
-let passwordHash: string | null = null
+// Cache for password hash (computed on first use)
+let passwordHashCache: string | null = null
 
 async function getPasswordHash(): Promise<string | null> {
-  if (passwordHash) return passwordHash
+  // First check database (via configService)
+  const dbHash = await configService.getSecret('passwordHash')
+  if (dbHash) {
+    return dbHash
+  }
+
+  // Fall back to environment variable (for migration)
+  if (passwordHashCache) return passwordHashCache
 
   if (config.appPasswordHash) {
-    passwordHash = config.appPasswordHash
-    return passwordHash
+    passwordHashCache = config.appPasswordHash
+    return passwordHashCache
   }
 
   if (config.appPassword) {
-    passwordHash = await argon2.hash(config.appPassword)
-    logger.info('Password hash computed from APP_PASSWORD')
-    return passwordHash
+    passwordHashCache = await argon2.hash(config.appPassword)
+    logger.info('Password hash computed from APP_PASSWORD environment variable')
+    return passwordHashCache
   }
 
   return null
 }
 
 // Check session status
-authRouter.get('/session', (req, res) => {
+authRouter.get('/session', async (req, res) => {
+  const hasPassword = await configService.hasSecret('passwordHash')
+  const authEnabled = !config.disableAuth && hasPassword
+
   res.json({
-    authenticated: !!req.session?.authenticated,
+    authenticated: config.disableAuth || !authEnabled || !!req.session?.authenticated,
+    authEnabled,
+    hasPassword,
+    isSetupMode: config.isSetupMode,
   })
 })
 
 // Login
 authRouter.post('/login', loginLimiter, async (req, res) => {
   try {
+    // Check if auth is enabled
+    const hasPassword = await configService.hasSecret('passwordHash')
+    if (config.disableAuth || !hasPassword) {
+      // Auth disabled or no password - auto-authenticate
+      req.session.authenticated = true
+      return res.json({ success: true })
+    }
+
     const { password } = req.body
 
     if (!password || typeof password !== 'string') {
@@ -111,14 +133,57 @@ authRouter.post('/change-password', async (req, res) => {
       return res.status(401).json({ error: 'Current password is incorrect' })
     }
 
-    // Update password hash in memory (note: this doesn't persist across restarts)
-    // For persistence, we'd need to store in database
-    passwordHash = await argon2.hash(newPassword)
+    // Hash and store new password in database
+    const newHash = await argon2.hash(newPassword, {
+      type: argon2.argon2id,
+      memoryCost: 65536,
+      timeCost: 3,
+      parallelism: 4,
+    })
+
+    await configService.setSecret('passwordHash', newHash)
+    passwordHashCache = null // Clear cache so next login uses DB value
 
     logger.info('Password changed successfully')
     res.json({ success: true })
   } catch (error) {
     logger.error({ error }, 'Change password error')
     res.status(500).json({ error: 'Failed to change password' })
+  }
+})
+
+// Set password (for initial setup or when no password exists)
+authRouter.post('/set-password', async (req, res) => {
+  try {
+    const existingHash = await getPasswordHash()
+
+    // If password already exists, require authentication
+    if (existingHash && !req.session?.authenticated) {
+      return res.status(401).json({ error: 'Unauthorized - use change-password endpoint' })
+    }
+
+    const { password } = req.body
+
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' })
+    }
+
+    // Hash and store password
+    const hash = await argon2.hash(password, {
+      type: argon2.argon2id,
+      memoryCost: 65536,
+      timeCost: 3,
+      parallelism: 4,
+    })
+
+    await configService.setSecret('passwordHash', hash)
+    await configService.set('disableAuth', false)
+    passwordHashCache = null
+
+    logger.info('Password set successfully')
+    res.json({ success: true })
+  } catch (error) {
+    logger.error({ error }, 'Set password error')
+    res.status(500).json({ error: 'Failed to set password' })
   }
 })

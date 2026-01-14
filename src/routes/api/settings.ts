@@ -1,10 +1,11 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../../db/client.js'
-import { config } from '../../config.js'
+import { config, updateConfig } from '../../config.js'
 import { logger } from '../../utils/logger.js'
 import { testTwilioConnection } from '../../services/twilio.js'
 import { checkFfmpeg } from '../../services/audio.js'
+import { configService } from '../../services/configService.js'
 
 export const settingsRouter = Router()
 
@@ -64,10 +65,13 @@ settingsRouter.get('/', async (_req, res) => {
       }
     }
 
-    // Mask sensitive values
-    if (result.twilioAuthToken) {
-      result.twilioAuthToken = '********'
-    }
+    // Get Twilio credentials from encrypted store (or fall back to runtime config)
+    const twilioSid = await configService.getSecret('twilioAccountSid')
+    const twilioPhone = await configService.getSecret('twilioPhoneNumber')
+
+    result.twilioAccountSid = twilioSid || config.twilioAccountSid
+    result.twilioPhoneNumber = twilioPhone || config.twilioPhoneNumber
+    result.twilioAuthToken = '********' // Always mask auth token
 
     res.json(result)
   } catch (error) {
@@ -86,15 +90,33 @@ settingsRouter.patch('/', async (req, res) => {
 
     const updates = validation.data
 
+    // Handle Twilio credentials separately (store encrypted)
+    if (updates.twilioAccountSid) {
+      await configService.setSecret('twilioAccountSid', updates.twilioAccountSid)
+      updateConfig({ twilioAccountSid: updates.twilioAccountSid })
+    }
+    if (updates.twilioAuthToken) {
+      await configService.setSecret('twilioAuthToken', updates.twilioAuthToken)
+      updateConfig({ twilioAuthToken: updates.twilioAuthToken })
+    }
+    if (updates.twilioPhoneNumber) {
+      await configService.setSecret('twilioPhoneNumber', updates.twilioPhoneNumber)
+      updateConfig({ twilioPhoneNumber: updates.twilioPhoneNumber })
+    }
+
+    // Handle other settings (store in regular settings table)
     for (const [key, value] of Object.entries(updates)) {
-      if (value !== undefined && SETTINGS_KEYS.includes(key as SettingKey)) {
+      if (value !== undefined && !key.startsWith('twilio') && SETTINGS_KEYS.includes(key as SettingKey)) {
         await setSetting(key as SettingKey, value)
       }
     }
 
     logger.info('Settings updated')
 
-    // Return updated settings (with masked values)
+    // Return updated settings
+    const twilioSid = await configService.getSecret('twilioAccountSid')
+    const twilioPhone = await configService.getSecret('twilioPhoneNumber')
+
     const settings = await prisma.settings.findMany()
     const result: Record<string, unknown> = {}
     for (const setting of settings) {
@@ -104,9 +126,11 @@ settingsRouter.patch('/', async (req, res) => {
         result[setting.key] = setting.value
       }
     }
-    if (result.twilioAuthToken) {
-      result.twilioAuthToken = '********'
-    }
+
+    // Add Twilio values (auth token masked)
+    result.twilioAccountSid = twilioSid || config.twilioAccountSid
+    result.twilioPhoneNumber = twilioPhone || config.twilioPhoneNumber
+    result.twilioAuthToken = '********'
 
     res.json(result)
   } catch (error) {
@@ -152,18 +176,27 @@ settingsRouter.get('/status', async (_req, res) => {
   const warnings: string[] = []
 
   // Check APP_BASE_URL
-  const baseUrl = config.appBaseUrl.toLowerCase()
-  const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('0.0.0.0')
-  const isHttp = baseUrl.startsWith('http://') && !isLocalhost
+  let isLocalhost = false
+  let isHttp = false
 
-  if (isLocalhost) {
+  if (config.appBaseUrl) {
+    const baseUrl = config.appBaseUrl.toLowerCase()
+    isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('0.0.0.0')
+    isHttp = baseUrl.startsWith('http://') && !isLocalhost
+
+    if (isLocalhost) {
+      warnings.push(
+        `Base URL is set to "${config.appBaseUrl}" which Twilio cannot reach. ` +
+        'Configure a tunnel service in Settings > Network, or use ngrok.'
+      )
+    } else if (isHttp) {
+      warnings.push(
+        'Base URL uses HTTP instead of HTTPS. Twilio may reject non-HTTPS callback URLs.'
+      )
+    }
+  } else {
     warnings.push(
-      `APP_BASE_URL is set to "${config.appBaseUrl}" which Twilio cannot reach. ` +
-      'Use a tunnel service like ngrok for local development: run "ngrok http 3000" and update APP_BASE_URL to the ngrok URL.'
-    )
-  } else if (isHttp) {
-    warnings.push(
-      'APP_BASE_URL uses HTTP instead of HTTPS. Twilio may reject non-HTTPS callback URLs.'
+      'No base URL configured. Twilio webhooks will not work until a public URL is set.'
     )
   }
 
@@ -182,5 +215,6 @@ settingsRouter.get('/status', async (_req, res) => {
     isLocalhost,
     hasFfmpeg,
     warnings,
+    isSetupMode: config.isSetupMode,
   })
 })

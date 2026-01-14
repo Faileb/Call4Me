@@ -19,11 +19,12 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@ngrok/ngrok": "^1.7.0",
     "@prisma/client": "^5.22.0",
-    "dotenv": "^16.4.5",
     "argon2": "^0.41.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "express-rate-limit": "^7.4.1",
     "express-session": "^1.18.1",
@@ -48,12 +49,12 @@
     "@typescript-eslint/parser": "^8.14.0",
     "concurrently": "^9.1.0",
     "eslint": "^8.57.1",
+    "pino-pretty": "^13.0.0",
     "prettier": "^3.3.3",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.5",
-    "pino-pretty": "^13.0.0"
+    "vitest": "^2.1.5"
   },
   "engines": {
     "node": ">=20.0.0"

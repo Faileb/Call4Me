@@ -1,54 +1,81 @@
 import 'dotenv/config'
-import { z } from 'zod'
 
-const configSchema = z.object({
-  // Twilio
-  twilioAccountSid: z.string().min(1),
-  twilioAuthToken: z.string().min(1),
-  twilioPhoneNumber: z.string().min(1),
+// Bootstrap config - provides defaults for startup before DB is available
+// Full dynamic config comes from configService after initialization
+
+export interface Config {
+  // Twilio (loaded from configService/secrets)
+  twilioAccountSid: string | null
+  twilioAuthToken: string | null
+  twilioPhoneNumber: string | null
 
   // App
-  port: z.coerce.number().default(3000),
-  appSecret: z.string().min(32),
-  appBaseUrl: z.string().url(),
-  appPassword: z.string().optional(),
-  appPasswordHash: z.string().optional(),
+  port: number
+  appSecret: string
+  appBaseUrl: string | null
+  appPassword: string | null
+  appPasswordHash: string | null
 
   // Storage
-  recordingsPath: z.string().default('./data/recordings'),
+  recordingsPath: string
 
   // Options
-  logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
-  disableAuth: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('false'),
-  isProduction: z.boolean().default(process.env.NODE_ENV === 'production'),
-})
+  logLevel: 'error' | 'warn' | 'info' | 'debug'
+  disableAuth: boolean
+  isProduction: boolean
 
-function loadConfig() {
-  const result = configSchema.safeParse({
-    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
-    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
-    twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
-    port: process.env.APP_PORT || process.env.PORT,
-    appSecret: process.env.APP_SECRET,
-    appBaseUrl: process.env.APP_BASE_URL,
-    appPassword: process.env.APP_PASSWORD,
-    appPasswordHash: process.env.APP_PASSWORD_HASH,
-    recordingsPath: process.env.RECORDINGS_PATH,
-    logLevel: process.env.LOG_LEVEL,
-    disableAuth: process.env.DISABLE_AUTH,
-    isProduction: process.env.NODE_ENV === 'production',
-  })
-
-  if (!result.success) {
-    console.error('Invalid configuration:', result.error.format())
-    process.exit(1)
-  }
-
-  return result.data
+  // Setup state
+  isSetupMode: boolean
 }
 
-export const config = loadConfig()
-export type Config = z.infer<typeof configSchema>
+// Mutable config object that can be updated after initialization
+const configData: Config = {
+  // Twilio - will be loaded from configService
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || null,
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || null,
+  twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER || null,
+
+  // App settings
+  port: parseInt(process.env.APP_PORT || process.env.PORT || '3000', 10),
+  appSecret: process.env.APP_SECRET || '', // Will be loaded from crypto service
+  appBaseUrl: process.env.APP_BASE_URL || null,
+  appPassword: process.env.APP_PASSWORD || null,
+  appPasswordHash: process.env.APP_PASSWORD_HASH || null,
+
+  // Storage
+  recordingsPath: process.env.RECORDINGS_PATH || './data/recordings',
+
+  // Options
+  logLevel: (process.env.LOG_LEVEL as Config['logLevel']) || 'info',
+  disableAuth: process.env.DISABLE_AUTH === 'true',
+  isProduction: process.env.NODE_ENV === 'production',
+
+  // Setup mode - will be determined during initialization
+  isSetupMode: false,
+}
+
+// Update config values after initialization
+export function updateConfig(updates: Partial<Config>): void {
+  Object.assign(configData, updates)
+}
+
+// Check if the app has required config to run normally
+export function hasRequiredConfig(): boolean {
+  return !!(
+    configData.twilioAccountSid &&
+    configData.twilioAuthToken &&
+    configData.twilioPhoneNumber &&
+    configData.appBaseUrl
+  )
+}
+
+// Export as proxy to ensure we always get current values
+export const config: Config = new Proxy(configData, {
+  get(target, prop: keyof Config) {
+    return target[prop]
+  },
+  set(target, prop: keyof Config, value) {
+    ;(target as unknown as Record<string, unknown>)[prop] = value
+    return true
+  },
+})
